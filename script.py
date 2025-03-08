@@ -8,7 +8,23 @@ named fork_exists(name) needs to be modified.
 # if you want to use virtual environment then you'll need to use #!/path/to/the/virtualenv/bin/python
 # at the top of your script
 
-import requests, sys, json
+import requests, json, argparse, sys
+from subprocess import run
+if sys.platform.startswith("win"):
+    import msvcrt
+    def get_key(): return msvcrt.getch().decode("utf-8")
+else:
+    import tty, termios
+    def get_key():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            key = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return key
+
 
 GITHUB_API_URL = r"https://api.github.com"
 GITHUB_TOKEN = r"" # Put Your Personal Github Access Token here. Get it from https://github.com/settings/tokens
@@ -150,19 +166,23 @@ def unsynced_forks_list(ultimate_list):
 
     return unsynced_forks
 
-
 if __name__ == "__main__":
     try:
-        # Create a fork if it doesn't exist else syncs the fork with the upstream (owner/name)
-        owner, uname = sys.argv[1:]
-        if not fork_exists(uname): create_fork(owner, uname) 
-        else: sync_fork(owner, uname)
-    except ValueError:
-        try:
-            count = 1
-            update = False
-            while True:  
-                option = input("""1. Get the list of all of your repositories.
+        if (len(sys.argv)) > 1:
+            # Create a fork if it doesn't exist else syncs the fork with the upstream (owner/name)
+            parser = argparse.ArgumentParser(description="Sync your fork! Now")
+            parser.add_argument("owner", help="Sync")
+            args = parser.parse_args()
+            # owner, uname = sys.argv[1:]
+            # if not fork_exists(uname): create_fork(owner, uname) 
+            # else: sync_fork(owner, uname)
+            print(f"args.owner: {args.owner}")
+        else:
+            try:
+                count = 0
+                update = True
+                while True:  
+                    option = input("""1. Get the list of all of your repositories.
 2. Get the list of all of your forks.
 3. Create a new fork. (does nothing if the fork already exists in your repo)
 4. Check if a fork is synced with it's upstream or not.
@@ -172,101 +192,116 @@ if __name__ == "__main__":
 8. Sync all the forks (automatically)
     
 What do you want: """)
-                if option not in ["1", "2", "3", "4", "5", "6", "7", "8"]: 
-                    print("Please choose a valid option.")
-                    quit(1)
-                
-                elif option in ["3", "4", "6"]:
-                    data = input("Upstream Repository (username/repo): ").strip()
-                    owner = data.split("/")[0].strip()
-                    uname = data.split("/")[1].strip()
+                    if option not in ["1", "2", "3", "4", "5", "6", "7", "8"]: 
+                        print("Please choose a valid option.\n")
+                        continue
                     
-                    if option == "3": 
-                        create_fork(owner, uname)
-                        update = True
-                        # if not fork_exists(uname): create_fork(owner, uname)
-                        # else: print("This fork already exists in your repo.")
-                    elif option == "4":
-                        if fork_exists(uname): 
-                            if (is_fork_synced(owner, uname)): print("The fork is up to date with it's upstream [SYNCED]")
-                            else: print("The fork is behind it's upstream [NOT SYNCED]")
-                        else: print("This fork doesn't exist in your repo")
-                    else: # elif option == "6":
-                        if fork_exists(uname):
-                            if (not is_fork_synced(owner, uname)): 
-                                sync_fork(owner, uname)
-                                update = True
-                            else: print("This fork is already synced with it's upstream")
-                        else: print("This fork doesn't exist in your repo")
+                    elif option in ["3", "4", "6"]:
+                        data = input("Upstream Repository (username/repo): ").strip()
+                        owner = data.split("/")[0].strip()
+                        uname = data.split("/")[1].strip()
                         
-                else:
-                    if count == 1 or update == True:
-                        repositories, forks, ultimate_list = repo_and_forks_list()       
-                        unsynced_forks = unsynced_forks_list(ultimate_list)
-                        count += 1
-                        update = False
-                
-                    if option == "1": 
-                        if repositories: 
-                            print("All of your Repositories")
-                            digits = digits_in_a_num(len(repositories))
-                            for index, repo in enumerate(repositories): print(f"{(index+1):{digits}d}. {repo}")
-                        else: print("You don't have any repository")
+                        if option == "3": 
+                            create_fork(owner, uname)
+                            update = True
+                            # if not fork_exists(uname): create_fork(owner, uname)
+                            # else: print("This fork already exists in your repo.")
+                        elif option == "4":
+                            if fork_exists(uname): 
+                                if (is_fork_synced(owner, uname)): print("The fork is up to date with it's upstream [SYNCED]")
+                                else: print("The fork is behind it's upstream [NOT SYNCED]")
+                            else: print("This fork doesn't exist in your repo")
+                        else: # elif option == "6":
+                            if fork_exists(uname):
+                                if (not is_fork_synced(owner, uname)): 
+                                    sync_fork(owner, uname)
+                                    update = True
+                                else: print("This fork is already synced with it's upstream")
+                            else: print("This fork doesn't exist in your repo")
+                            
+                    else:
+                        if update == True:
+                            repositories, forks, ultimate_list = repo_and_forks_list()       
+                            unsynced_forks = unsynced_forks_list(ultimate_list)
+                            update = False
+                    
+                        if option == "1": 
+                            if repositories: 
+                                print("All of your Repositories")
+                                digits = digits_in_a_num(len(repositories))
+                                for index, repo in enumerate(repositories): print(f"{(index+1):{digits}d}. {repo}")
+                            else: print("You don't have any repository")
 
-                    elif option == "2": 
-                        if forks:
-                            print("All of your Forks (with their upstreams)")
-                            digits = digits_in_a_num(len(forks))
-                            for index, info in enumerate(forks): print(f"{(index+1):{digits}d}. {info[0]} ({info[1]})")
-                        else: print("No forks were found.")
+                        elif option == "2": 
+                            if forks:
+                                print("All of your Forks (with their upstreams)")
+                                digits = digits_in_a_num(len(forks))
+                                for index, info in enumerate(forks): print(f"{(index+1):{digits}d}. {info[0]} ({info[1]})")
+                            else: print("No forks were found.")
+                                    
+                        elif option == "5": 
+                            if (unsynced_forks):
+                                print("List of the forks that are not synced")
+                                # length = len(unsynced_forks)
+                                # for owner, uname in unsynced_forks:
+                                    # if (length != 1): 
+                                    #     print(f"{owner}/{uname}, ", end = "")
+                                    #     length -= 1
+                                    # else: print(f"{owner}/{uname}")
                                 
-                    elif option == "5": 
-                        if (unsynced_forks):
-                            print("List of the forks that are not synced")
-                            # length = len(unsynced_forks)
-                            # for owner, uname in unsynced_forks:
-                                # if (length != 1): 
-                                #     print(f"{owner}/{uname}, ", end = "")
-                                #     length -= 1
-                                # else: print(f"{owner}/{uname}")
+                                digits = digits_in_a_num(len(unsynced_forks))
+                                for index, info in enumerate(unsynced_forks): print(f"{(index+1):{digits}d}. {info[0]}/{info[1]}")
+                            else: print("All of your forks are up to date with their upstreams")
                             
-                            digits = digits_in_a_num(len(unsynced_forks))
-                            for index, info in enumerate(unsynced_forks): print(f"{(index+1):{digits}d}. {info[0]}/{info[1]}")
-                        else: print("All of your forks are up to date with their upstreams")
-                        
-                    elif option == "7":
-                        to_sync = []
-                        print("""Upstream Repositories in the format (add space between each forks) (username/repo username repo ... )""")
-                        user_input = input("> ").strip()
-                        
-                        for info in user_input.split(" "):
-                            owner = info.split("/")[0].strip()
-                            uname = info.split("/")[1].strip()
-                            combo = owner, uname
-                            if combo in unsynced_forks: to_sync.append(combo)
-                        
-                        if (len(to_sync) > 0):
-                            print(f"Auto syncing.....")
-                            for owner, uname in to_sync:
-                                print(f"Updating {owner}/{uname}")
-                                sync_fork(owner, uname)
-                                print()
-                            update = True
-                            print("All of the forks have been updated with their upstreams")
-                        else: print("All of the forks you've mentioned are up to date with their upstreams")          
+                        elif option == "7":
+                            to_sync = []
+                            print("""Upstream Repositories in the format (add space between each forks) (username/repo username repo ... )""")
+                            user_input = input("> ").strip()
                             
-                    elif option == "8":
-                        if (len(unsynced_forks) > 0):
-                            print(f"Auto syncing.....")
-                            for owner, uname in unsynced_forks:
-                                print(f"Updating {owner}/{uname}")
-                                sync_fork(owner, uname)
-                                print()
-                            update = True
-                            print("All of the forks have been updated with their upstreams")
-                        else: print("All of your forks are up to date with their upstreams")
-                
-                print("\n\n")
-                
-        except KeyboardInterrupt: print("Invalid Key pressed [EXITED]")
-        except Exception as e: print("An error occurred: ", e)
+                            for info in user_input.split(" "):
+                                owner = info.split("/")[0].strip()
+                                uname = info.split("/")[1].strip()
+                                combo = owner, uname
+                                if combo in unsynced_forks: to_sync.append(combo)
+                            
+                            if (len(to_sync) > 0):
+                                print(f"Auto syncing.....")
+                                for owner, uname in to_sync:
+                                    print(f"Updating {owner}/{uname}")
+                                    sync_fork(owner, uname)
+                                    print()
+                                update = True
+                                print("All of the forks have been updated with their upstreams")
+                            else: print("All of the forks you've mentioned are up to date with their upstreams")          
+                                
+                        elif option == "8":
+                            if (len(unsynced_forks) > 0):
+                                print(f"Auto syncing.....")
+                                for owner, uname in unsynced_forks:
+                                    print(f"Updating {owner}/{uname}")
+                                    sync_fork(owner, uname)
+                                    print()
+                                update = True
+                                print("All of the forks have been updated with their upstreams")
+                            else: print("All of your forks are up to date with their upstreams")
+                    
+                    count += 1
+                    
+                    try:
+                        print("\nPress Enter to continue, anything else to quit ", end="")
+                        key = get_key()
+                        if key == "\r" or key == "\n":  # Handle Enter on both OS
+                            if (count%2 == 0): run("cls" if sys.platform.startswith("win") else "clear", shell=True)
+                            continue
+                        else:
+                            print("\nExiting...")
+                            quit(0)
+                    except KeyboardInterrupt:
+                          print("\n\nDetected Ctrl+C! Exiting safely...")
+                          quit(0)
+                    
+            except KeyboardInterrupt: print("Invalid Key pressed [EXITED]")
+            except Exception as e: print("An error occurred: ", e)
+
+    except KeyboardInterrupt: print("Invalid Key pressed [EXITED]")
+    except Exception as e: print("An error occurred: ", e)
